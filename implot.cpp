@@ -1689,6 +1689,42 @@ bool BeginPlot(const char* title, const char* x_label, const char* y_label, cons
             if (xt->RenderLabel && xt->PixelPos >= gp.BB_Plot.Min.x - 1 && xt->PixelPos <= gp.BB_Plot.Max.x + 1)
                 DrawList.AddText(ImVec2(xt->PixelPos - xt->Size.x * 0.5f, gp.BB_Plot.Max.y + txt_off), gp.Col_X.Txt, gp.XTickLabels.Buf.Data + xt->TextOffset);
         }
+        
+        // Hovering X Tooltip
+        if (HasFlag(plot.Flags, ImPlotFlags_MousePos) && gp.Hov_Frame) {
+            
+            ImVec2 xy = IO.MousePos;
+            ImVec2 v1(xy.x, gp.BB_Plot.Min.y);          
+            ImVec2 v4(xy.x, gp.BB_Plot.Max.y);
+            DrawList.AddLine(v1, v4, ImGui::GetColorU32(ImVec4((.83137254902F), (0.0F), (0.0F), (1.0F))), 0.5);
+            // Point Formatters should be wrapped 
+
+            char buffer[128] = {};
+            
+
+            double range_x = gp.XTicks.Size > 1 ? (gp.XTicks[1].PlotPos - gp.XTicks[0].PlotPos) : plot.XAxis.Range.Size();
+            
+
+            if (HasFlag(plot.XAxis.Flags, ImPlotAxisFlags_Time)) {
+                ImTimeUnit_ unit = gp.XTicks.Size > 1 ? gp.XTicks[0].DisplayUnit : ImTimeUnit_US;
+                sprintf(buffer, "%s", ImTimeFormatter{ gp.LastMousePos[0].x }.GetRangeFormattedString(unit));
+            }
+            else {
+                sprintf(buffer, "%.*f", Precision(range_x), gp.LastMousePos[0].x);
+            }
+            
+            ImVec2 size = ImGui::CalcTextSize(buffer);
+            ImVec2 pos = ImVec2{ xy.x, gp.BB_Plot.Max.y + txt_off };
+                     
+            ImVec2 labelWidth = ImGui::CalcTextSize(buffer, NULL, true);
+
+            ImRect tooltip_content_bb = ImRect(pos - ImVec2{1,1}, pos + labelWidth + ImVec2{ 1,1});
+            
+            DrawList.AddRectFilled(tooltip_content_bb.Min, tooltip_content_bb.Max, ImGui::GetColorU32(ImVec4((.83137254902F), (0.0F), (0.0F), (1.0F))));
+
+            DrawList.AddText(pos, gp.Col_Txt, buffer);
+
+        }
         ImGui::PopClipRect();
     }
     if (x_label) {
@@ -2595,7 +2631,7 @@ struct TransformerLogLog {
 
 /// Renders primitive shapes in bulk as efficiently as possible.
 template <typename Renderer>
-inline void RenderPrimitives(Renderer renderer, ImDrawList& DrawList) {
+inline void RenderPrimitives(Renderer& renderer, ImDrawList& DrawList) {
     int prims = renderer.Prims;
     int prims_culled = 0;
     int idx = 0;
@@ -2719,30 +2755,20 @@ inline void MarkerCross(ImDrawList& DrawList, const ImVec2& c, float s, bool /*o
 
 template <typename Transformer, typename Getter>
 inline void RenderMarkers(Getter getter, Transformer transformer, ImDrawList& DrawList, bool rend_mk_line, ImU32 col_mk_line, bool rend_mk_fill, ImU32 col_mk_fill) {
+    static void (*marker_table[])(ImDrawList&, const ImVec2&, float s, bool, ImU32, bool, ImU32, float) = { MarkerCircle, MarkerSquare, MarkerDiamond , MarkerUp , MarkerDown , MarkerLeft, MarkerRight, MarkerCross, MarkerPlus, MarkerAsterisk};
+    
+    ImVector<int> enabledMarkersBitIndex;
+    for (int i = 1; i <= 10; ++i) {   // For all markers
+        if (HasFlag(gp.Style.Marker, 1 << i)) {
+            enabledMarkersBitIndex.push_back(i-1);
+        }
+    }
+    
     for (int i = 0; i < getter.Count; ++i) {
         ImVec2 c = transformer(getter(i));
         if (gp.BB_Plot.Contains(c)) {
-            // TODO: Optimize the loop and if statements, this is atrocious
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Circle))
-                MarkerCircle(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Square))
-                MarkerSquare(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Diamond))
-                MarkerDiamond(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Up))
-                MarkerUp(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Down))
-                MarkerDown(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Left))
-                MarkerLeft(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Right))
-                MarkerRight(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Cross))
-                MarkerCross(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Plus))
-                MarkerPlus(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
-            if (HasFlag(gp.Style.Marker, ImPlotMarker_Asterisk))
-                MarkerAsterisk(DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
+            for (int midx = 0; midx< enabledMarkersBitIndex.Size; ++midx) 
+                marker_table[enabledMarkersBitIndex[midx]](DrawList, c, gp.Style.MarkerSize, rend_mk_line, col_mk_line, rend_mk_fill, col_mk_fill, gp.Style.MarkerWeight);
         }
     }
 }
@@ -2757,11 +2783,16 @@ struct LineRenderer {
         Col = col;
         Weight = weight;
         p1 = transformer(getter(0));
+        x1 = getter(0);    // actual x
+        mpoint.x = mpoint.y = 0;
+        mpoint_a = x1;
     }
     inline bool operator()(ImDrawList& DrawList, ImVec2 uv, int prim) {
         ImVec2 p2 = transformer(getter(prim + 1));
+        x2 = getter(prim + 1);
         if (!gp.BB_Plot.Overlaps(ImRect(ImMin(p1, p2), ImMax(p1, p2)))) {
             p1 = p2;
+            x1 = x2;
             return false;
         }
         float dx = p2.x - p1.x;
@@ -2794,7 +2825,12 @@ struct LineRenderer {
         DrawList._IdxWritePtr[5] = (ImDrawIdx)(DrawList._VtxCurrentIdx + 3);
         DrawList._IdxWritePtr += 6;
         DrawList._VtxCurrentIdx += 4;
+        if (x1.x <= gp.LastMousePos[0].x && gp.LastMousePos[0].x <= x2.x) {
+            mpoint = p1;
+            mpoint_a = x1;
+        }
         p1 = p2;
+        x1 = x2;
         return true;
     }
     Getter getter;
@@ -2805,22 +2841,51 @@ struct LineRenderer {
     ImVec2 p1;
     static const int IdxConsumed = 6;
     static const int VtxConsumed = 4;
+
+    // Book keeping for Hovering 
+    ImVec2 mpoint;
+    ImPlotPoint x1, mpoint_a, x2;
 };
 
 template <typename Getter, typename Transformer>
 inline void RenderLineStrip(Getter getter, Transformer transformer, ImDrawList& DrawList, float line_weight, ImU32 col) {
+    ImVec2 mpoint{ 0,0 };
+    ImPlotPoint mpoint_a;
     if (HasFlag(gp.CurrentPlot->Flags, ImPlotFlags_AntiAliased)) {
         ImVec2 p1 = transformer(getter(0));
+        auto x1 = getter(0);    // actual x
+        mpoint_a = x1;
         for (int i = 0; i < getter.Count; ++i) {
             ImVec2 p2 = transformer(getter(i));
-            if (gp.BB_Plot.Overlaps(ImRect(ImMin(p1, p2), ImMax(p1, p2))))
+            auto x2 = getter(i);
+            if (gp.BB_Plot.Overlaps(ImRect(ImMin(p1, p2), ImMax(p1, p2)))) {              
                 DrawList.AddLine(p1, p2, col, line_weight);
+                if (x1.x <= gp.LastMousePos[0].x && gp.LastMousePos[0].x <= x2.x) {
+                    mpoint = p1;
+                    mpoint_a = x1;
+                }
+            }
             p1 = p2;
+            x1 = x2;
         }
     }
     else {
-        RenderPrimitives(LineRenderer<Getter,Transformer>(getter, transformer, col, line_weight), DrawList);
+        auto ret = LineRenderer<Getter, Transformer>(getter, transformer, col, line_weight);
+        RenderPrimitives(ret, DrawList);
+        mpoint = ret.mpoint;
+        mpoint_a = ret.mpoint_a;
+        
     }
+    
+    // get max width
+    char label[64];
+    sprintf(label, "%.2f", mpoint_a.y);
+    ImVec2 labelWidth = ImGui::CalcTextSize(label, NULL, true);
+    ImRect tooltip_content_bb = ImRect(mpoint - ImVec2{1, 1}, mpoint + labelWidth + ImVec2{1,1});
+    MarkerCircle(DrawList, mpoint, 4, true, col, true, col, 2);
+    
+    DrawList.AddRectFilled(tooltip_content_bb.Min, tooltip_content_bb.Max, col);
+    DrawList.AddText(mpoint, CalcTextColor(ImGui::ColorConvertU32ToFloat4(col)), label);
 }
 
 template <typename Getter1, typename Getter2, typename Transformer>
@@ -2958,6 +3023,7 @@ inline void PlotEx(const char* label_id, Getter getter)
     ImDrawList& DrawList = *ImGui::GetWindowDrawList();
     ImPlotState* plot = gp.CurrentPlot;
     const int y_axis = plot->CurrentYAxis;
+    
 
     PushPlotClipRect();
     // render line

@@ -119,6 +119,7 @@ struct BenchmarkItem {
     ImVec4 Col;
 };
 
+
 void ShowDemoWindow(bool* p_open) {
     static const char* cmap_names[]   = {"Default","Dark","Pastel","Paired","Viridis","Plasma","Hot","Cool","Pink","Jet"};
     static bool show_app_metrics = false;
@@ -202,15 +203,30 @@ void ShowDemoWindow(bool* p_open) {
         //struct timeval timestamp;
         //gettimeofday(&timestamp, NULL);
         //double baseMicroTimestamp = timestamp.tv_sec * 1000000 + timestamp.tv_usec;
+        double old_price = 230;
+        srand(0);
         double baseMicroTimestamp = 1589954190000000;
         ImPlot::SetNextPlotLimitsX(baseMicroTimestamp, baseMicroTimestamp + 1001 * 100, ImGuiCond_Once);
+        ImPlot::SetNextPlotLimitsY(220, 240, ImGuiCond_Once);
+        
+
+
         for (int i = 0; i < 1001; ++i) {
+            double rnd = RandomRange(0, 1); // generate number, 0 <= x < 1.0
+            double volatility = 0.01;
+            double change_percent = 2 * volatility * rnd;
+            if (change_percent > volatility)
+                change_percent -= (2 * volatility);
+            double change_amount = old_price * change_percent;
+            double new_price = old_price + change_amount;
+            old_price = new_price;
             txs1[i] = baseMicroTimestamp + i * 10000;
-            tys1[i] = 0.5f + 0.5f * sin(50 * txs1[i]);
+            tys1[i] = new_price;
         }
         
+        
         if (ImPlot::BeginPlot("Time Series Plot", "x_t", "f(x_t)", ImVec2(-1,0), ImPlotFlags_Default, ImPlotAxisFlags_Default | ImPlotAxisFlags_Time)) {
-            ImPlot::PlotLine("sin(50*x_t)", txs1, tys1, 1001);
+            ImPlot::PlotLine("Stock Price", txs1, tys1, 1001);
             ImPlot::EndPlot();
         }
     }
