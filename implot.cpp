@@ -2825,6 +2825,11 @@ struct LineRenderer {
         DrawList._IdxWritePtr[5] = (ImDrawIdx)(DrawList._VtxCurrentIdx + 3);
         DrawList._IdxWritePtr += 6;
         DrawList._VtxCurrentIdx += 4;
+        if ((gp.CurrentPlot->Selecting) && (p1.x <= gp.CurrentPlot->SelectStart.x && gp.CurrentPlot->SelectStart.x <= p2.x)) {
+            mpoint_qb = p1;
+            mpoint_a_qb = x1;
+            queryCheck = true;
+        }
         if (x1.x <= gp.LastMousePos[0].x && gp.LastMousePos[0].x <= x2.x) {
             mpoint = p1;
             mpoint_a = x1;
@@ -2843,23 +2848,33 @@ struct LineRenderer {
     static const int VtxConsumed = 4;
 
     // Book keeping for Hovering 
-    ImVec2 mpoint;
-    ImPlotPoint x1, mpoint_a, x2;
+    ImVec2 mpoint, mpoint_qb;
+    ImPlotPoint x1, mpoint_a, x2, mpoint_a_qb;
+    bool queryCheck = false;
 };
 
 template <typename Getter, typename Transformer>
 inline void RenderLineStrip(Getter getter, Transformer transformer, ImDrawList& DrawList, float line_weight, ImU32 col) {
     ImVec2 mpoint{ 0,0 };
-    ImPlotPoint mpoint_a;
+    ImVec2 mpoint_qb{ 0,0 };
+    ImPlotPoint mpoint_a, mpoint_a_qb;
+    bool queryCheck = false;
+    
     if (HasFlag(gp.CurrentPlot->Flags, ImPlotFlags_AntiAliased)) {
         ImVec2 p1 = transformer(getter(0));
         auto x1 = getter(0);    // actual x
         mpoint_a = x1;
+        mpoint_a_qb = x1;
         for (int i = 0; i < getter.Count; ++i) {
             ImVec2 p2 = transformer(getter(i));
             auto x2 = getter(i);
             if (gp.BB_Plot.Overlaps(ImRect(ImMin(p1, p2), ImMax(p1, p2)))) {              
                 DrawList.AddLine(p1, p2, col, line_weight);
+                if ((gp.CurrentPlot->Selecting) && (p1.x <= gp.CurrentPlot->SelectStart.x && gp.CurrentPlot->SelectStart.x <= p2.x)) {
+                    mpoint_qb = p1;
+                    mpoint_a_qb = x1;
+                    queryCheck = true;
+                }
                 if (x1.x <= gp.LastMousePos[0].x && gp.LastMousePos[0].x <= x2.x) {
                     mpoint = p1;
                     mpoint_a = x1;
@@ -2874,12 +2889,20 @@ inline void RenderLineStrip(Getter getter, Transformer transformer, ImDrawList& 
         RenderPrimitives(ret, DrawList);
         mpoint = ret.mpoint;
         mpoint_a = ret.mpoint_a;
+        mpoint_a_qb = ret.mpoint_a_qb;
+        mpoint_qb = ret.mpoint_qb;
+        queryCheck = ret.queryCheck;
         
     }
     
     // get max width
-    char label[64];
-    sprintf(label, "%.2f", mpoint_a.y);
+    char label[128];
+    if (queryCheck)
+        sprintf(label, "%.2f , (%.2f%%)", mpoint_a.y, ((mpoint_a.y - mpoint_a_qb.y)*100)/(mpoint_a_qb.y+0.000001));
+    else {
+        
+        sprintf(label, "%.2f", mpoint_a.y);
+    }
     ImVec2 labelWidth = ImGui::CalcTextSize(label, NULL, true);
     ImRect tooltip_content_bb = ImRect(mpoint - ImVec2{1, 1}, mpoint + labelWidth + ImVec2{1,1});
     MarkerCircle(DrawList, mpoint, 4, true, col, true, col, 2);
