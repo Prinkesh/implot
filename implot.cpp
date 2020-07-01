@@ -2629,9 +2629,46 @@ struct TransformerLogLog {
 // RENDERERS
 //-----------------------------------------------------------------------------
 
-/// Renders primitive shapes in bulk as efficiently as possible.
 template <typename Renderer>
-inline void RenderPrimitives(Renderer& renderer, ImDrawList& DrawList) {
+inline void RenderPrimitives(Renderer renderer, ImDrawList& DrawList) {
+    int prims = renderer.Prims;
+    int prims_culled = 0;
+    int idx = 0;
+    const ImVec2 uv = DrawList._Data->TexUvWhitePixel;
+    while (prims) {
+        // find how many can be reserved up to end of current draw command's limit
+        int cnt = (int)ImMin(size_t(prims), (((size_t(1) << sizeof(ImDrawIdx) * 8) - 1 - DrawList._VtxCurrentIdx) / Renderer::VtxConsumed));
+        // make sure at least this many elements can be rendered to avoid situations where at the end of buffer this slow path is not taken all the time
+        if (cnt >= ImMin(64, prims)) {
+            if (prims_culled >= cnt)
+                prims_culled -= cnt; // reuse previous reservation
+            else {
+                DrawList.PrimReserve((cnt - prims_culled) * Renderer::IdxConsumed, (cnt - prims_culled) * Renderer::VtxConsumed); // add more elements to previous reservation
+                prims_culled = 0;
+            }
+        }
+        else
+        {
+            if (prims_culled > 0) {
+                DrawList.PrimUnreserve(prims_culled * Renderer::IdxConsumed, prims_culled * Renderer::VtxConsumed);
+                prims_culled = 0;
+            }
+            cnt = (int)ImMin(size_t(prims), (((size_t(1) << sizeof(ImDrawIdx) * 8) - 1 - 0/*DrawList._VtxCurrentIdx*/) / Renderer::VtxConsumed));
+            DrawList.PrimReserve(cnt * Renderer::IdxConsumed, cnt * Renderer::VtxConsumed); // reserve new draw command
+        }
+        prims -= cnt;
+        for (int ie = idx + cnt; idx != ie; ++idx) {
+            if (!renderer(DrawList, uv, idx))
+                prims_culled++;
+        }
+    }
+    if (prims_culled > 0)
+        DrawList.PrimUnreserve(prims_culled * Renderer::IdxConsumed, prims_culled * Renderer::VtxConsumed);
+}
+/// Renders primitive shapes in bulk as efficiently as possible.
+
+template <typename Renderer>
+inline void RenderPrimitivesByRef(Renderer& renderer, ImDrawList& DrawList) {
     int prims = renderer.Prims;
     int prims_culled = 0;
     int idx = 0;
@@ -2886,7 +2923,7 @@ inline void RenderLineStrip(Getter getter, Transformer transformer, ImDrawList& 
     }
     else {
         auto ret = LineRenderer<Getter, Transformer>(getter, transformer, col, line_weight);
-        RenderPrimitives(ret, DrawList);
+        RenderPrimitivesByRef(ret, DrawList);
         mpoint = ret.mpoint;
         mpoint_a = ret.mpoint_a;
         mpoint_a_qb = ret.mpoint_a_qb;
